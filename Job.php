@@ -27,14 +27,30 @@ class CronJobberPhp_Job
 	
 	private $_wasRun = false;
 	
-	public function __construct( $jobFileLine, $currentTime )
+	public function __construct(
+		$jobFileLine,
+		$currentTime,
+		$replaceVars = array() )
 	{
 		$this->_currentTime = $currentTime;
 	
 		$firstSpaceLocation = strpos($jobFileLine, ' ');
 		$this->_timeStr = substr($jobFileLine, 0, $firstSpaceLocation);
 		$this->_cmd = substr($jobFileLine, $firstSpaceLocation);
-				
+
+		if( !empty($replaceVars) )
+		{
+			$search = array();
+			$replace = array();
+			foreach( $replaceVars as $findKey => $replaceVal )
+			{
+				$search[] = '{'.$findKey.'}';
+				$replace[] = $replaceVal;
+			}
+			
+			$this->_cmd = str_replace($search, $replace, $this->_cmd);
+		}
+		
 		$this->_parseTimeStr();
 	}
 	

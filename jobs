@@ -10,3 +10,7 @@
 #
 # On a minute increment
 # 30M ls /
+#
+# If you've provided command line arugments to run.php (see README) you
+# can utalize them here by using brackets
+# 5M ls {argument}/test

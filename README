@@ -16,6 +16,11 @@ to edit the crontab file on your server to run the run.php script using
 the PHP CLI. The best increment to run this file at would be at an
 interval less then or equal to your most frequent job.
 
+When calling the run.php script you may provide any number of arguments like so:
+	php run.php code-root=~/code key=val
+
+Then when you configure your jobs file you can use bracket notation:
+	ls {code-root}/demo
 
 ################################################################################
 # Job Setup

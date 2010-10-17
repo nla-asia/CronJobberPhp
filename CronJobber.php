@@ -15,15 +15,17 @@ class CronJobberPhp_CronJobber
 	const LOCK_FILE_NAME = '.lock';
 	
 	private $_timeRun;
+	private $_params;
 	
 	private $_jobFileContents; //array
 	private $_logFileContents; //array
 	
 	private $_jobs;
 	
-	public function __construct()
+	public function __construct( $params = array() )
 	{
 		$this->_timeRun = time();
+		$this->_params = $params;
 	}
 	
 	public function run()
@@ -77,6 +79,8 @@ class CronJobberPhp_CronJobber
 			$logFileContents .= $logFileEntry;
 		}
 		
+		$logFineContents .= "\n";
+		
 		file_put_contents(
 			dirname(__FILE__).'/'.self::LOG_FILE_NAME,
 			$logFileContents
@@ -92,7 +96,13 @@ class CronJobberPhp_CronJobber
 			$trimmedJobLine = trim($jobLine);
 			if( $trimmedJobLine[0] == '#' ) continue;
 			
-			$newJob = new CronJobberPhp_Job($trimmedJobLine, $this->_timeRun);
+			$newJob =
+				new CronJobberPhp_Job(
+					$trimmedJobLine,
+					$this->_timeRun,
+					$this->_params
+				);
+			
 			$newJobHash = $newJob->getHash();
 
 			if( isset($this->_jobs[$newJobHash]) )
