@@ -1,4 +1,13 @@
 <?php
+/**
+ * CronJobberPHP (http://github.com/CoreyLoose/CronJobberPhp)
+ *
+ * Licensed under The Clear BSD License
+ * Redistributions of files must retain the above copyright notice.
+ *
+ * @copyright Copyright 2010, Corey Losenegger (http://coreyloose.com)
+ * @license Clear BSD (http://labs.metacarta.com/license-explanation.html)
+ */
 class CronJobberPhp_Job
 {
 	private $_timeStr;
@@ -50,6 +59,11 @@ class CronJobberPhp_Job
 		}
 		
 		return false;
+	}
+	
+	public function getCmd()
+	{
+		return $this->_cmd;
 	}
 	
 	public function setLastRun( $time )
