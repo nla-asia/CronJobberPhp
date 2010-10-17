@@ -1,0 +1,11 @@
+# You can configure schedualed commands here in a few different formats
+# Be sure to see the README for server setup requirements
+#
+# Once a day at a specific time
+# 13:00:00 ls /
+#
+# On an hourly increment
+# 4H ls /
+#
+# On a minute increment
+# 30M ls /
