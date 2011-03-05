@@ -1,176 +1,182 @@
 <?php
 /**
- * CronJobberPHP (http://github.com/CoreyLoose/CronJobberPhp)
- *
- * Licensed under The Clear BSD License
- * Redistributions of files must retain the above copyright notice.
- *
- * @copyright Copyright 2010, Corey Losenegger (http://coreyloose.com)
- * @license Clear BSD (http://labs.metacarta.com/license-explanation.html)
- */
-class CronJobberPhp_CronJobber
+* CronJobberPhp (http://github.com/CoreyLoose/CronJobberPhp)
+*
+* Licensed under The Clear BSD License
+* Redistributions of files must retain the above copyright notice.
+*
+* @copyright Copyright 2011, Corey Losenegger (http://coreyloose.com)
+* @license Clear BSD (http://labs.metacarta.com/license-explanation.html)
+*/
+class libs_CronJobberPhp_CronJobber
 {
 	const JOB_FILE_NAME = 'jobs';
 	const LOG_FILE_NAME = '.log';
-	const LOCK_FILE_NAME = '.lock';
+	const LOCK_DIR_NAME = '.lock';
+
+	public $logFileLocation;
+	public $lockFileDir;
 	
-	private $_timeRun;
-	private $_params;
+	private $_cliParams;
 	
-	private $_jobFileContents; //array
-	private $_logFileContents; //array
-	
-	private $_jobs;
-	
-	public function __construct( $params = array() )
+	public function __construct( $cliParams = array() )
 	{
-		$this->_timeRun = time();
-		$this->_params = $params;
+		$this->_cliParams = $cliParams;
+		$this->jobFile = dirname(__FILE__).'/'.self::JOB_FILE_NAME;
+		$this->logFileLocation = dirname(__FILE__).'/'.self::LOG_FILE_NAME;
+		$this->lockFileDir = dirname(__FILE__).'/'.self::LOCK_DIR_NAME;
 	}
 	
 	public function run()
 	{
-		$this->_tryGetLock();
-		
-		try
-		{					
-			$this->_loadJobFile();
-			$this->_loadLogFile();
-			
-			$this->_parseJobs();
-			$this->_parseLogs();		
-			
-			$this->_runJobs();
-		}
-		catch( Exception $e )
-		{
-			$this->_releaseLock();
-			throw $e;
-		}
-		
-		$this->_releaseLock();
-	}
-	
-	protected function _runJobs()
-	{		
-		$logFileContents == '' ;
-		
-		$humanDateFormat = 'Y-m-d H:i:s';
-		
-		foreach( $this->_jobs as $job )
-		{
-			if( $job->shouldRun() )
-			{
-				$job->run();
-				$logFileEntry =
-					$job->getHash().' '.$this->_timeRun
-					.' ('.date($humanDateFormat, $this->_timeRun);
-			}
-			else
-			{
-				$logFileEntry =
-					$job->getHash().' '.$job->getLastRun()
-					.' ('.date($humanDateFormat, $job->getLastRun());
-			}
-			
-			$logFileEntry .= ' '.$job->getCmd().')';
-			
-			if( $logFileContents != '' ) $logFileContents .= "\n";
-			$logFileContents .= $logFileEntry;
-		}
-		
-		$logFineContents .= "\n";
-		
-		file_put_contents(
-			dirname(__FILE__).'/'.self::LOG_FILE_NAME,
-			$logFileContents
-		);
-	}
-	
-	protected function _parseJobs()
-	{
-		$this->_jobs = array();
-		
-		foreach( $this->_jobFileContents as $jobLine )
-		{
-			$trimmedJobLine = trim($jobLine);
-			if( $trimmedJobLine[0] == '#' ) continue;
-			
-			$newJob =
-				new CronJobberPhp_Job(
-					$trimmedJobLine,
-					$this->_timeRun,
-					$this->_params
-				);
-			
-			$newJobHash = $newJob->getHash();
+		$jobs = 
+			$this->createJobs(
+				$this->parseJobFile(
+					$this->loadJobFile($this->jobFile)
+				),
+				$this->_cliParams
+			);
 
-			if( isset($this->_jobs[$newJobHash]) )
+		$logs = 
+			$this->parseLogFile(
+				$this->loadLogFileIfExists($this->logFileLocation)
+			);	
+			
+		$this->ensureLockDirectoryExists($this->lockFileDir);	
+		
+		foreach( $jobs as $job ) {
+			if( !isset($logs[$job->hash])
+			    || $job->shouldRunNow($logs[$job->hash]) )
 			{
-				echo "Ignoring duplicate command '",$newJob,"'\n";
+				if( $this->getLockForJob($job, $this->lockFileDir) ) {
+					$job->runAsync();
+					$logs[$job->hash] = time();
+				}
+			}
+		}
+		
+		$this->writeLogFile($this->logFileLocation, $logs);
+	}
+	
+	public function loadJobFile( $file )
+	{
+		if( !file_exists($file) ) {
+			throw new Exception('Unable to load job file: "'.$file.'"');
+		}
+		return file_get_contents($file);
+	}
+	
+	public function loadLogFileIfExists( $file )
+	{
+		if( !file_exists($file) ) {
+			return FALSE;
+		}
+		return file_get_contents($file);
+	}
+	
+	public function writeLogFile( $fileLocation, $logHashes )
+	{
+		$fileContents = '';
+		foreach( $logHashes as $hash => $time ) {
+			$fileContents .= $hash.' '.date('Y-m-d H:i:s', $time)."\n";
+		}
+		file_put_contents($fileLocation, $fileContents);
+	}
+	
+	public function parseJobFile( $fileContents )
+	{
+		$jobsHash = array();
+		foreach( explode("\n",$fileContents) as $jobLine ) {
+			$trimmedJobLine = trim($jobLine);
+			if( $trimmedJobLine == FALSE || $trimmedJobLine[0] == '#' ) { 
+				continue;	
+			}
+			$newJobHash = $this->hashJobLine($trimmedJobLine);
+			if( isset($jobsHash[$newJobHash]) ) {
+				throw new Exception('Duplicate job: "'.$trimmedJobLine.'"');
+			}
+			$jobsHash[$newJobHash] = $trimmedJobLine;
+		}
+		return $jobsHash;
+	}
+	
+	public function parseLogFile( $logFileContents )
+	{
+		$logHashes = array();
+		foreach( explode("\n",$logFileContents) as $logLine ) {
+			$trimmedLogLine = trim($logLine);
+			if( $trimmedLogLine == FALSE ) { 
 				continue;
 			}
-			
-			$this->_jobs[$newJobHash] = $newJob;
-		}
-	}
-
-	protected function _parseLogs()
-	{
-		foreach( $this->_logFileContents as $logLine )
-		{
-			$explodedLine = explode(' ', $logLine);
-			if( isset($this->_jobs[$explodedLine[0]]) )
-			{
-				$this->_jobs[$explodedLine[0]]->setLastRun(trim($explodedLine[1]));
+			$logBits = explode(' ', $trimmedLogLine);
+			if( count($logBits) < 3 ) {
+				throw new Exception('Invalid Log line "'.$trimmedLogLine.'"');
 			}
+			$logHash = $logBits[0];
+			$logTime = $logBits[1].' '.$logBits[2];
+			if( isset($logHashes[$logHash]) ) {
+				throw new Exception('Duplicate log: "'.$logHash.'"');
+			}
+			$logHashes[$logHash] = strtotime($logTime);
+		}
+		return $logHashes;
+	}
+	
+	public function createJobs( $jobsHash, $replaceVars = array() )
+	{
+		$jobs = array();
+		foreach( $jobsHash as $hash => $job ) { 
+			$firstSpaceLocation = strpos($job, ' ');
+			$timeStr = substr($job, 0, $firstSpaceLocation);
+			$cmd = trim(substr($job, $firstSpaceLocation));
+			if( !empty($replaceVars) ) {
+				$cmd = $this->processReplaceVarsForCmd($cmd, $replaceVars);
+			}
+			$jobs[] = new libs_CronJobberPhp_Job($timeStr, $cmd, $hash);
+		}
+		return $jobs;
+	}
+	
+	public function processReplaceVarsForCmd( $cmd, $replaceVars )
+	{
+		$search = array();
+		$replace = array();
+		foreach( $replaceVars as $findKey => $replaceVal ) {
+			$search[] = '{'.$findKey.'}';
+			$replace[] = $replaceVal;
+		}
+		return str_replace($search, $replace, $cmd);
+	}
+	
+	public function ensureLockDirectoryExists( $lockDir )
+	{
+		if( !file_exists($lockDir) ) {
+			mkdir($lockDir);
 		}
 	}
 	
-	protected function _tryGetLock()
+	public function getLockForJob( libs_CronJobberPhp_Job $job, $lockDir )
 	{
-		$fileToTry = dirname(__FILE__).'/'.self::LOCK_FILE_NAME;
-		
-		if( !file_exists($fileToTry) )
-		{
-			touch($fileToTry);
-			return;
+		$lockFile = $lockDir.'/'.$job->hash;
+		if( file_exists($lockFile) ) {
+			return FALSE;
 		}
-		
-		throw new Exception('Unable to get cron lock. Halting.');
+		touch($lockFile);
+		return TRUE;
 	}
 	
-	protected function _releaseLock()
+	public function releaseLockForJob( libs_CronJobberPhp_Job $job, $lockDir )
 	{
-		unlink(dirname(__FILE__).'/'.self::LOCK_FILE_NAME);
+		$lockFile = $lockDir.'/'.$job->hash;
+		if( !file_exists($lockFile) ) {
+			return FALSE;
+		}
+		unlink($lockFile);
+		return TRUE;
 	}
 	
-	protected function _loadJobFile()
+	public function hashJobLine( $line )
 	{
-		$fileToTry = dirname(__FILE__).'/'.self::JOB_FILE_NAME;
-		
-		if( file_exists($fileToTry) )
-		{
-			$this->_jobFileContents = file($fileToTry);
-		}
-		else
-		{
-			throw new Exception('Could not open job file: "'.$fileToTry.'"');
-		}
-	}
-	
-	protected function _loadLogFile()
-	{
-		$fileToTry = dirname(__FILE__).'/'.self::LOG_FILE_NAME;
-		
-		if( file_exists($fileToTry) )
-		{
-			$this->_logFileContents = file($fileToTry);
-		}
-		else
-		{
-			touch($fileToTry);
-			$this->_logFileContents = array();
-		}
+		return md5($line);
 	}
 }
